@@ -7,4 +7,5 @@ export const menuRoutes = [
     return getMenu(branchId);
   }),
   route('GET', 'branches', async () => listBranches()),
+  route('GET', 'tables/:token', async (ctx) => resolveTableToken(ctx.params.token!)),
 ];
