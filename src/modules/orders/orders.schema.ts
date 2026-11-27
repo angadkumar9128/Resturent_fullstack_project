@@ -22,7 +22,7 @@ export const checkoutSchema = quoteSchema
       email: z.string().trim().email('Enter a valid email').optional().or(z.literal('')),
     }),
     address: addressSchema.optional(),
-    tableCode: z.string().trim().max(20).optional(),
+    tableToken: z.string().trim().min(1).max(128).optional(),
     paymentMethod: paymentMethodSchema,
     notes: z.string().trim().max(300).optional(),
   })
@@ -30,7 +30,7 @@ export const checkoutSchema = quoteSchema
     if (v.type === 'DELIVERY' && !v.address) {
       ctx.addIssue({ code: 'custom', path: ['address'], message: 'Delivery address is required' });
     }
-    if (v.type === 'DINE_IN' && !v.tableCode) {
+    if (v.type === 'DINE_IN' && !v.tableToken) {
       ctx.addIssue({ code: 'custom', path: ['tableCode'], message: 'Table code is required for dine-in' });
     }
     if (v.paymentMethod === 'COD' && v.type !== 'DELIVERY') {
