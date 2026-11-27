@@ -39,7 +39,7 @@ export async function setMenuAvailability(id: string, input: { branchId: string;
   const item = await prisma.menuItem.findUnique({ where: { id }, select: { id: true } });
   if (!item) throw E.notFound('Menu item not found');
   const result = await repo.setAvailability(id, input.branchId, input.isAvailable, input.stockQty);
-  await prisma.auditLog.create({ data: { actorId, action: 'menu.availability', entityType: 'MenuItem', entityId: id, diff: input } });
+  await prisma.auditLog.create({ data: { actorId, action: 'menu.availability', entityType: 'MenuItem', entityId: id, diff: input as Prisma.InputJsonValue } });
   revalidateTag('menu');
   return result;
 }
