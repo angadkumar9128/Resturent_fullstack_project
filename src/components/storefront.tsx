@@ -28,11 +28,10 @@ export default function Storefront() {
   const [instructions, setInstructions] = useState('');
   const [orderType, setOrderType] = useState<'DELIVERY'|'TAKEAWAY'|'DINE_IN'>('TAKEAWAY');
   const [paymentMethod, setPaymentMethod] = useState<'UPI'|'CARD'|'NETBANKING'|'WALLET'|'COD'|'PAY_AT_COUNTER'>('UPI');
-  const [pincode, setPincode] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [customer, setCustomer] = useState({ name: '', phone: '', email: '' });
   const [address, setAddress] = useState({ name: '', line1: '', line2: '', landmark: '', city: '', state: '', pincode: '' });
-  const [tableCode, setTableCode] = useState('');
+  const [tableToken, setTableToken] = useState('');
   const [notes, setNotes] = useState('');
   const [quote, setQuote] = useState<Quote | null>(null);
   const [busy, setBusy] = useState(false);
@@ -41,12 +40,19 @@ export default function Storefront() {
   const [codCode, setCodCode] = useState('');
 
   useEffect(() => {
+    const qrToken = new URLSearchParams(window.location.search).get('table') || '';
+    if (qrToken) { setTableToken(qrToken); setOrderType('DINE_IN'); setPaymentMethod('PAY_AT_COUNTER'); }
     api<BranchDto[]>('/api/branches').then(async (list) => {
       setBranches(list);
       const first = list[0];
       if (first) {
         setBranch(first);
-        const data = await api<MenuDto>('/api/menu?branch=' + encodeURIComponent(first.slug));
+        let selected = first;
+        if (qrToken) {
+          try { const table = await api<{ branchId: string }>('/api/tables/' + encodeURIComponent(qrToken)); selected = list.find(b => b.id === table.branchId) || first; setBranch(selected); }
+          catch (e) { setMessage((e as Error).message); }
+        }
+        const data = await api<MenuDto>('/api/menu?branch=' + encodeURIComponent(selected.slug));
         setMenu(data);
       }
     }).catch(e => setMessage(e.message));
@@ -83,10 +89,10 @@ export default function Storefront() {
   }
   async function getQuote() {
     if (!cart.length) return;
-    if (orderType === 'DELIVERY' && !pincode) { setMessage('Enter your delivery PIN code first.'); return; }
+    if (orderType === 'DELIVERY' && !address.pincode) { setMessage('Enter your delivery PIN code first.'); return; }
     setBusy(true); setMessage('');
     try {
-      const q = await api<Quote>('/api/pricing/quote', { method: 'POST', body: JSON.stringify({ type: orderType, branchId: branch?.id, items: cart.map(({ menuItemId, variantId, addonIds, quantity, instructions }) => ({ menuItemId, variantId, addonIds, quantity, instructions })), pincode: orderType === 'DELIVERY' ? pincode : undefined, couponCode: couponCode || undefined }) });
+      const q = await api<Quote>('/api/pricing/quote', { method: 'POST', body: JSON.stringify({ type: orderType, branchId: branch?.id, items: cart.map(({ menuItemId, variantId, addonIds, quantity, instructions }) => ({ menuItemId, variantId, addonIds, quantity, instructions })), pincode: orderType === 'DELIVERY' ? address.pincode : undefined, couponCode: couponCode || undefined }) });
       setQuote(q);
     } catch (e) { setMessage((e as Error).message); setQuote(null); }
     finally { setBusy(false); }
@@ -94,10 +100,10 @@ export default function Storefront() {
   async function checkout() {
     if (!cart.length) return;
     if (orderType === 'DELIVERY' && !address.pincode) { setMessage('Complete your delivery address.'); return; }
-    if (orderType === 'DINE_IN' && !tableCode.trim()) { setMessage('Enter the table code from your QR card.'); return; }
+    if (orderType === 'DINE_IN' && !tableToken.trim()) { setMessage('Scan the table QR code or enter its token.'); return; }
     setBusy(true); setMessage('');
     try {
-      const result = await api<{ order: { id: string; orderNumber: string; status: string }; next: string; payment?: { keyId: string; razorpayOrderId: string; amountPaise: number; currency: string; orderId: string; orderNumber: string; prefill: { name: string; phone: string; email: string | null } } }>('/api/checkout', { method: 'POST', body: JSON.stringify({ type: orderType, branchId: branch?.id, items: cart.map(({ menuItemId, variantId, addonIds, quantity, instructions }) => ({ menuItemId, variantId, addonIds, quantity, instructions })), pincode: orderType === 'DELIVERY' ? address.pincode : undefined, couponCode: couponCode || undefined, customer, address: orderType === 'DELIVERY' ? address : undefined, tableCode: orderType === 'DINE_IN' ? tableCode : undefined, paymentMethod, notes }) });
+      const result = await api<{ order: { id: string; orderNumber: string; status: string }; next: string; payment?: { keyId: string; razorpayOrderId: string; amountPaise: number; currency: string; orderId: string; orderNumber: string; prefill: { name: string; phone: string; email: string | null } } }>('/api/checkout', { method: 'POST', body: JSON.stringify({ type: orderType, branchId: branch?.id, items: cart.map(({ menuItemId, variantId, addonIds, quantity, instructions }) => ({ menuItemId, variantId, addonIds, quantity, instructions })), pincode: orderType === 'DELIVERY' ? address.pincode : undefined, couponCode: couponCode || undefined, customer, address: orderType === 'DELIVERY' ? address : undefined, tableToken: orderType === 'DINE_IN' ? tableToken : undefined, paymentMethod, notes }) });
       setOrder(result.order);
       if (result.next === 'ONLINE_PAYMENT' && result.payment) {
         const Razorpay = (window as unknown as { Razorpay?: new (options: Record<string, unknown>) => { open: () => void } }).Razorpay;
