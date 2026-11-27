@@ -95,6 +95,12 @@ export async function getDefaultBranchDto(): Promise<BranchDto | null> {
 }
 
 /** Resolve a branch id/slug; falls back to the first active branch. */
+export async function resolveTableToken(token: string) {
+  const table = await menuRepository.findTableByQrToken(token);
+  if (!table) throw E.notFound('This table QR code is invalid or inactive');
+  return { tableCode: table.code, branchId: table.branch.id, branchSlug: table.branch.slug, branchName: table.branch.name };
+}
+
 export async function resolveBranchId(value?: string): Promise<string> {
   if (value) {
     const b = await menuRepository.findBranchBySlugOrId(value);
