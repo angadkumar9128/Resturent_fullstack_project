@@ -66,7 +66,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return { id: user.id, name: user.name, email: user.email };
       },
     }),
-    ...(googleEnabled ? [Google] : []),
+    ...(googleEnabled ? [Google({ clientId: process.env.AUTH_GOOGLE_ID!, clientSecret: process.env.AUTH_GOOGLE_SECRET! })] : []),
   ],
   callbacks: {
     // Role is re-read from the DB so demoting/disabling a user takes effect immediately.
