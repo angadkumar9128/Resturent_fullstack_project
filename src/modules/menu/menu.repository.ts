@@ -13,6 +13,10 @@ export const menuRepository = {
     return prisma.branch.findFirst({ where: { isActive: true, OR: [{ id: value }, { slug: value }] } });
   },
 
+  findTableByQrToken(token: string) {
+    return prisma.diningTable.findFirst({ where: { qrToken: token, isActive: true, branch: { isActive: true } }, include: { branch: { select: { id: true, slug: true, name: true } } } });
+  },
+
   listCatalog(branchId: string) {
     return prisma.menuCategory.findMany({
       where: { isActive: true },
