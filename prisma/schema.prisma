@@ -1,0 +1,663 @@
+// =============================================================================
+// Spice Garden – PostgreSQL schema (Prisma)
+// Conventions
+//  * ALL money is stored as integer PAISE (₹1 = 100). Never floats.
+//  * Tax rates are stored in basis points (5% = 500).
+//  * Order/OrderItem rows are SNAPSHOTS: later menu/price edits never change history.
+//  * Double-booking and duplicate-payment protection is enforced by DB unique
+//    constraints, not only by application code.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // used by migrations when a pooler (Neon/Supabase) is in front
+}
+
+// ----------------------------------------------------------------------------
+// Enums
+// ----------------------------------------------------------------------------
+
+enum Role {
+  CUSTOMER
+  KITCHEN_STAFF
+  ADMIN
+}
+
+enum DietType {
+  VEG // green dot
+  NON_VEG // brown/red triangle
+  EGG // egg indicator
+}
+
+enum SpiceLevel {
+  NONE
+  MILD
+  MEDIUM
+  SPICY
+}
+
+enum Allergen {
+  GLUTEN
+  DAIRY
+  NUTS
+  PEANUTS
+  SOY
+  EGG
+  FISH
+  SHELLFISH
+  SESAME
+  MUSTARD
+}
+
+enum OrderType {
+  DELIVERY
+  TAKEAWAY
+  DINE_IN
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT // created, waiting for online payment confirmation
+  PLACED
+  ACCEPTED
+  PREPARING
+  READY // takeaway/dine-in ready
+  OUT_FOR_DELIVERY
+  DELIVERED
+  COMPLETED // dine-in / takeaway finished
+  CANCELLED
+}
+
+enum PaymentMethod {
+  UPI
+  CARD
+  NETBANKING
+  WALLET
+  COD
+  PAY_AT_COUNTER // dine-in
+}
+
+enum PaymentStatus {
+  CREATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUND_PENDING
+  REFUNDED
+  COD_PENDING // cash to be collected
+  COD_COLLECTED
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  SEATED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum Occasion {
+  NONE
+  BIRTHDAY
+  ANNIVERSARY
+  BUSINESS
+  OTHER
+}
+
+enum DiscountType {
+  FLAT
+  PERCENT
+}
+
+enum OtpPurpose {
+  LOGIN
+  COD_VERIFY
+}
+
+enum NotificationChannel {
+  SMS
+  WHATSAPP
+  EMAIL
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+enum BillRequestStatus {
+  OPEN
+  RESOLVED
+}
+
+// ----------------------------------------------------------------------------
+// Auth & users
+// ----------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  phone         String?   @unique // E.164, e.g. +919876543210
+  phoneVerified DateTime?
+  image         String?
+  passwordHash  String? // staff/admin email+password login (argon2/bcrypt hash); null for OTP/Google-only users
+  role          Role      @default(CUSTOMER)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts     Account[] // OAuth (Google) links – Auth.js adapter
+  addresses    Address[]
+  orders       Order[]
+  reservations Reservation[]
+  redemptions  CouponRedemption[]
+  auditLogs    AuditLog[]
+
+  @@index([role])
+}
+
+// Required by the Auth.js Prisma adapter (sessions themselves are stateless JWT cookies).
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+// One row per OTP sent. Code is stored HASHED. Attempts are capped.
+model OtpChallenge {
+  id           String     @id @default(cuid())
+  phone        String
+  purpose      OtpPurpose
+  codeHash     String
+  attempts     Int        @default(0)
+  maxAttempts  Int        @default(5)
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  orderId      String? // set for COD_VERIFY
+  createdAt    DateTime   @default(now())
+
+  @@index([phone, purpose, createdAt])
+  @@index([expiresAt])
+}
+
+model Address {
+  id        String   @id @default(cuid())
+  userId    String
+  label     String   @default("Home") // Home / Work / Other
+  name      String
+  phone     String
+  line1     String
+  line2     String?
+  landmark  String?
+  city      String
+  state     String
+  pincode   String // 6-digit Indian PIN
+  latitude  Decimal? @db.Decimal(9, 6)
+  longitude Decimal? @db.Decimal(9, 6)
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([pincode])
+}
+
+// ----------------------------------------------------------------------------
+// Branches, tables, delivery & tax configuration
+// ----------------------------------------------------------------------------
+
+model Branch {
+  id               String   @id @default(cuid())
+  slug             String   @unique
+  name             String
+  phone            String
+  email            String?
+  addressLine      String
+  city             String
+  state            String
+  pincode          String
+  latitude         Decimal? @db.Decimal(9, 6)
+  longitude        Decimal? @db.Decimal(9, 6)
+  isActive         Boolean  @default(true)
+  acceptsDelivery  Boolean  @default(true)
+  acceptsTakeaway  Boolean  @default(true)
+  acceptsDineIn    Boolean  @default(true)
+  openTime         String   @default("11:00") // HH:mm, branch local time (Asia/Kolkata)
+  closeTime        String   @default("23:00")
+  slotMinutes      Int      @default(90) // length of one reservation slot
+
+  // Compliance / trust (shown in footer & invoices)
+  fssaiNumber      String
+  gstin            String
+  hygieneRating    String? // e.g. "FSSAI Hygiene Rating 5/5"
+
+  // Tax & charges
+  gstRateBps            Int @default(500) // 5% total GST => CGST 2.5% + SGST 2.5%
+  packagingChargePaise  Int @default(0) // flat, applied to DELIVERY/TAKEAWAY
+  freeDeliveryAbovePaise Int? // null = never free
+  minOrderPaise         Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tables         DiningTable[]
+  deliveryZones  DeliveryZone[]
+  availability   BranchMenuItem[]
+  orders         Order[]
+  reservations   Reservation[]
+}
+
+// Delivery fee by PIN code (distance-based fee can be pre-computed into zones).
+model DeliveryZone {
+  id          String  @id @default(cuid())
+  branchId    String
+  pincode     String
+  feePaise    Int
+  etaMinutes  Int     @default(40)
+  isActive    Boolean @default(true)
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, pincode])
+}
+
+model DiningTable {
+  id        String  @id @default(cuid())
+  branchId  String
+  code      String // "T12" – used in /menu?table=T12
+  seats     Int
+  qrToken   String  @unique @default(cuid()) // unguessable token embedded in the QR URL
+  isActive  Boolean @default(true)
+
+  branch       Branch                 @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  orders       Order[]
+  slotLocks    ReservationSlotLock[]
+  billRequests BillRequest[]
+
+  @@unique([branchId, code])
+}
+
+// ----------------------------------------------------------------------------
+// Menu
+// ----------------------------------------------------------------------------
+
+model MenuCategory {
+  id        String  @id @default(cuid())
+  slug      String  @unique
+  name      String
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  items MenuItem[]
+}
+
+model MenuItem {
+  id          String       @id @default(cuid())
+  categoryId  String
+  slug        String       @unique
+  name        String
+  description String?
+  imageUrl    String?
+  diet        DietType
+  jainAvailable Boolean    @default(false) // can be prepared Jain-style on request
+  spiceLevel  SpiceLevel   @default(NONE)
+  allergens   Allergen[]
+  basePricePaise Int // used when the item has no variants
+  gstRateBps  Int? // optional override of branch GST rate
+  isBestseller Boolean     @default(false)
+  isActive    Boolean      @default(true) // soft delete / hide everywhere
+  sortOrder   Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  category    MenuCategory     @relation(fields: [categoryId], references: [id])
+  variants    ItemVariant[]
+  addonGroups AddonGroup[]
+  availability BranchMenuItem[]
+
+  @@index([categoryId, sortOrder])
+  @@index([isActive])
+}
+
+// Portion sizes: Half / Full, Regular / Large, etc.
+model ItemVariant {
+  id         String  @id @default(cuid())
+  itemId     String
+  name       String
+  pricePaise Int
+  isDefault  Boolean @default(false)
+  sortOrder  Int     @default(0)
+
+  item MenuItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+}
+
+model AddonGroup {
+  id        String  @id @default(cuid())
+  itemId    String
+  name      String // "Extras", "Choose your bread"
+  minSelect Int     @default(0)
+  maxSelect Int     @default(1)
+  sortOrder Int     @default(0)
+
+  item   MenuItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  addons Addon[]
+
+  @@index([itemId])
+}
+
+model Addon {
+  id         String  @id @default(cuid())
+  groupId    String
+  name       String
+  pricePaise Int     @default(0)
+  diet       DietType @default(VEG)
+  isActive   Boolean @default(true)
+  sortOrder  Int     @default(0)
+
+  group AddonGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+}
+
+// Per-branch stock switch ("Out of Stock") and optional counted inventory.
+model BranchMenuItem {
+  branchId    String
+  itemId      String
+  isAvailable Boolean @default(true)
+  stockQty    Int? // null = untracked
+  updatedAt   DateTime @updatedAt
+
+  branch Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  item   MenuItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([branchId, itemId])
+}
+
+// ----------------------------------------------------------------------------
+// Promotions
+// ----------------------------------------------------------------------------
+
+model Coupon {
+  id                String       @id @default(cuid())
+  code              String       @unique // stored UPPERCASE
+  description       String?
+  discountType      DiscountType
+  value             Int // FLAT: paise | PERCENT: basis points (1000 = 10%)
+  maxDiscountPaise  Int? // cap for PERCENT coupons
+  minOrderPaise     Int          @default(0)
+  usageLimit        Int? // total redemptions allowed (null = unlimited)
+  usedCount         Int          @default(0) // incremented inside a locked transaction
+  perUserLimit      Int          @default(1)
+  orderTypes        OrderType[] // empty = all order types
+  validFrom         DateTime
+  validUntil        DateTime
+  isActive          Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+
+  redemptions CouponRedemption[]
+}
+
+model CouponRedemption {
+  id         String   @id @default(cuid())
+  couponId   String
+  userId     String?
+  orderId    String   @unique // one redemption per order => idempotent
+  amountPaise Int
+  createdAt  DateTime @default(now())
+
+  coupon Coupon @relation(fields: [couponId], references: [id])
+  user   User?  @relation(fields: [userId], references: [id])
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([couponId, userId])
+}
+
+// ----------------------------------------------------------------------------
+// Orders & payments
+// ----------------------------------------------------------------------------
+
+model Order {
+  id           String      @id @default(cuid())
+  orderNumber  String      @unique // human friendly e.g. SG-240915-0042
+  userId       String?
+  branchId     String
+  tableId      String? // DINE_IN via QR
+  type         OrderType
+  status       OrderStatus @default(PENDING_PAYMENT)
+
+  customerName  String
+  customerPhone String
+  customerEmail String?
+  deliveryAddress Json? // snapshot of Address at order time
+  deliveryPincode String?
+  notes         String?
+  scheduledFor  DateTime?
+
+  // Totals – ALL computed server-side by the pricing engine
+  subtotalPaise        Int
+  discountPaise        Int @default(0)
+  taxableAmountPaise   Int // subtotal - discount (+ packaging/delivery where taxable)
+  cgstPaise            Int
+  sgstPaise            Int
+  packagingPaise       Int @default(0)
+  deliveryFeePaise     Int @default(0)
+  roundOffPaise        Int @default(0)
+  totalPaise           Int
+
+  couponCode     String?
+  paymentMethod  PaymentMethod
+  placedAt       DateTime?
+  acceptedAt     DateTime?
+  deliveredAt    DateTime?
+  cancelledAt    DateTime?
+  cancelReason   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user       User?          @relation(fields: [userId], references: [id])
+  branch     Branch         @relation(fields: [branchId], references: [id])
+  table      DiningTable?   @relation(fields: [tableId], references: [id])
+  items      OrderItem[]
+  payments   Payment[]
+  events     OrderStatusEvent[]
+  redemption CouponRedemption?
+
+  @@index([userId, createdAt])
+  @@index([branchId, status, createdAt])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id            String   @id @default(cuid())
+  orderId       String
+  menuItemId    String? // nullable: item may be deleted later, snapshot remains
+  name          String
+  diet          DietType
+  variantName   String?
+  unitPricePaise Int // variant/base price at order time
+  addons        Json? // [{ id, name, pricePaise }]
+  addonsTotalPaise Int @default(0)
+  quantity      Int
+  lineTotalPaise Int // (unit + addons) * quantity
+  instructions  String? // "less spicy, no onion"
+  jain          Boolean  @default(false)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model OrderStatusEvent {
+  id        String      @id @default(cuid())
+  orderId   String
+  status    OrderStatus
+  actorId   String? // staff/admin user id, null = system/customer
+  note      String?
+  createdAt DateTime    @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  orderId           String
+  provider          String        @default("RAZORPAY") // RAZORPAY | CASHFREE | COD
+  method            PaymentMethod
+  status            PaymentStatus @default(CREATED)
+  amountPaise       Int
+  currency          String        @default("INR")
+  providerOrderId   String?       @unique // razorpay order_id
+  providerPaymentId String?       @unique // razorpay payment_id (unique => no double capture)
+  signature         String?
+  failureReason     String?
+  refundedPaise     Int           @default(0)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+// Every webhook delivery is recorded; unique eventId makes processing idempotent.
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  provider    String
+  eventId     String // provider event id (X-Razorpay-Event-Id)
+  eventType   String
+  payload     Json
+  processedAt DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([provider, eventId])
+}
+
+model BillRequest {
+  id        String            @id @default(cuid())
+  tableId   String
+  status    BillRequestStatus @default(OPEN)
+  createdAt DateTime          @default(now())
+  resolvedAt DateTime?
+
+  table DiningTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+}
+
+// ----------------------------------------------------------------------------
+// Reservations
+// ----------------------------------------------------------------------------
+
+model Reservation {
+  id               String            @id @default(cuid())
+  confirmationCode String            @unique // e.g. "SG7K2Q"
+  userId           String?
+  branchId         String
+  name             String
+  phone            String
+  email            String?
+  partySize        Int
+  slotStart        DateTime // UTC instant; displayed in Asia/Kolkata
+  slotEnd          DateTime
+  occasion         Occasion          @default(NONE)
+  specialRequests  String?
+  status           ReservationStatus @default(PENDING)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  user      User?                 @relation(fields: [userId], references: [id])
+  branch    Branch                @relation(fields: [branchId], references: [id])
+  slotLocks ReservationSlotLock[]
+
+  @@index([branchId, slotStart])
+  @@index([phone])
+}
+
+// Concurrency guard: one row per (table, slot). The UNIQUE constraint makes a
+// double booking impossible even if two requests race past the application check.
+// Rows are deleted when a reservation is cancelled / no-show.
+model ReservationSlotLock {
+  id            String   @id @default(cuid())
+  reservationId String
+  tableId       String
+  slotStart     DateTime
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  table       DiningTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@unique([tableId, slotStart])
+  @@index([reservationId])
+}
+
+// ----------------------------------------------------------------------------
+// Notifications, audit, settings
+// ----------------------------------------------------------------------------
+
+model NotificationLog {
+  id         String              @id @default(cuid())
+  channel    NotificationChannel
+  recipient  String
+  template   String
+  payload    Json?
+  status     NotificationStatus  @default(QUEUED)
+  error      String?
+  entityType String? // "order" | "reservation"
+  entityId   String?
+  createdAt  DateTime            @default(now())
+
+  @@index([entityType, entityId])
+  @@index([status, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String // "menu.update", "coupon.create", "order.status"...
+  entityType String
+  entityId   String?
+  diff       Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+}
+
+// Simple DB-backed rate limiter (swap for Upstash/Redis when scaling horizontally).
+model RateLimitBucket {
+  key         String   @id // e.g. "otp:+919876543210" or "login:1.2.3.4"
+  count       Int
+  windowStart DateTime
+
+  @@index([windowStart])
+}

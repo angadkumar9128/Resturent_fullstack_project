@@ -1,0 +1,139 @@
+{
+  "counters": {
+    "menu": 9,
+    "orders": 3,
+    "reservations": 2
+  },
+  "users": [
+    {
+      "id": 1,
+      "username": "admin",
+      "passwordHash": "$2a$10$9lBhzpvfx6sI.6ZGNo75VOflOYWsrd45Gh3klXez6p8rBcyiVHiDa"
+    }
+  ],
+  "menu": [
+    {
+      "id": 1,
+      "name": "Paneer Tikka",
+      "category": "Starters",
+      "price": 220,
+      "description": "Char-grilled cottage cheese with spiced yogurt marinade.",
+      "veg": true,
+      "available": true
+    },
+    {
+      "id": 2,
+      "name": "Chicken 65",
+      "category": "Starters",
+      "price": 260,
+      "description": "Crispy South Indian style fried chicken with curry leaves.",
+      "veg": false,
+      "available": true
+    },
+    {
+      "id": 3,
+      "name": "Butter Chicken",
+      "category": "Main Course",
+      "price": 340,
+      "description": "Tender chicken in a rich tomato-butter gravy.",
+      "veg": false,
+      "available": true
+    },
+    {
+      "id": 4,
+      "name": "Dal Makhani",
+      "category": "Main Course",
+      "price": 240,
+      "description": "Slow-cooked black lentils finished with cream.",
+      "veg": true,
+      "available": true
+    },
+    {
+      "id": 5,
+      "name": "Veg Biryani",
+      "category": "Rice & Breads",
+      "price": 250,
+      "description": "Fragrant basmati rice layered with vegetables and spices.",
+      "veg": true,
+      "available": true
+    },
+    {
+      "id": 6,
+      "name": "Garlic Naan",
+      "category": "Rice & Breads",
+      "price": 60,
+      "description": "Soft tandoor-baked bread brushed with garlic butter.",
+      "veg": true,
+      "available": true
+    },
+    {
+      "id": 7,
+      "name": "Gulab Jamun",
+      "category": "Desserts",
+      "price": 110,
+      "description": "Warm milk dumplings in cardamom sugar syrup.",
+      "veg": true,
+      "available": true
+    },
+    {
+      "id": 8,
+      "name": "Masala Chai",
+      "category": "Beverages",
+      "price": 50,
+      "description": "Spiced Indian tea brewed with milk.",
+      "veg": true,
+      "available": true
+    }
+  ],
+  "orders": [
+    {
+      "id": 1,
+      "customerName": "Angad Kumar",
+      "phone": "9128949854",
+      "address": "Marathahalli, Bangalore",
+      "notes": "no",
+      "items": [
+        {
+          "id": 4,
+          "name": "Dal Makhani",
+          "price": 240,
+          "qty": 1
+        }
+      ],
+      "total": 240,
+      "status": "Cancelled",
+      "createdAt": "2026-11-27T06:03:07.817Z"
+    },
+    {
+      "id": 2,
+      "customerName": "Angad Kumar",
+      "phone": "09128949854",
+      "address": "Marathahalli, Bangalore",
+      "notes": "jksd",
+      "items": [
+        {
+          "id": 6,
+          "name": "Garlic Naan",
+          "price": 60,
+          "qty": 1
+        }
+      ],
+      "total": 60,
+      "status": "Completed",
+      "createdAt": "2026-11-27T06:04:20.969Z"
+    }
+  ],
+  "reservations": [
+    {
+      "id": 1,
+      "name": "Angad Kumar",
+      "phone": "9128949854",
+      "date": "2027-01-14",
+      "time": "13:35",
+      "guests": 2,
+      "notes": "no",
+      "status": "Confirmed",
+      "createdAt": "2026-11-27T06:04:07.285Z"
+    }
+  ]
+}

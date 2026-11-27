@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Spice Garden | Order Online & Reserve a Table</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="nav">
+    <a href="#top" class="logo">🍛 Spice Garden</a>
+    <nav>
+      <a href="#menu">Menu</a>
+      <a href="#reserve">Reserve</a>
+      <a href="#track">Track Order</a>
+      <button id="cartBtn" class="btn btn-small">Cart (<span id="cartCount">0</span>)</button>
+    </nav>
+  </header>
+
+  <section class="hero" id="top">
+    <h1>Authentic flavours, delivered fresh</h1>
+    <p>Order online or book a table in seconds.</p>
+    <a href="#menu" class="btn">Order Now</a>
+  </section>
+
+  <main>
+    <section id="menu" class="section">
+      <h2>Our Menu</h2>
+      <div id="categoryTabs" class="tabs"></div>
+      <div id="menuGrid" class="grid"></div>
+    </section>
+
+    <section id="reserve" class="section alt">
+      <h2>Reserve a Table</h2>
+      <form id="reserveForm" class="form">
+        <input name="name" placeholder="Your name" required />
+        <input name="phone" placeholder="Phone number" required />
+        <input name="date" type="date" required />
+        <input name="time" type="time" required />
+        <input name="guests" type="number" min="1" max="20" value="2" required />
+        <textarea name="notes" placeholder="Special requests (optional)"></textarea>
+        <button class="btn" type="submit">Book Table</button>
+        <p id="reserveMsg" class="msg"></p>
+      </form>
+    </section>
+
+    <section id="track" class="section">
+      <h2>Track Your Order</h2>
+      <form id="trackForm" class="form inline">
+        <input id="trackId" type="number" min="1" placeholder="Order number" required />
+        <button class="btn" type="submit">Track</button>
+      </form>
+      <div id="trackResult" class="msg"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>© <span id="year"></span> Spice Garden · Open daily 11:00 AM – 11:00 PM</p>
+    <a href="admin.html">Admin</a>
+  </footer>
+
+  <aside id="cartDrawer" class="drawer">
+    <div class="drawer-head">
+      <h3>Your Cart</h3>
+      <button id="closeCart" class="icon-btn" aria-label="Close cart">✕</button>
+    </div>
+    <div id="cartItems"></div>
+    <div class="drawer-foot">
+      <div class="total-row"><span>Total</span><strong id="cartTotal">₹0</strong></div>
+      <form id="checkoutForm" class="form">
+        <input name="customerName" placeholder="Your name" required />
+        <input name="phone" placeholder="Phone number" required />
+        <textarea name="address" placeholder="Delivery address" required></textarea>
+        <textarea name="notes" placeholder="Notes (optional)"></textarea>
+        <button class="btn" type="submit">Place Order</button>
+        <p id="checkoutMsg" class="msg"></p>
+      </form>
+    </div>
+  </aside>
+  <div id="overlay" class="overlay"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
