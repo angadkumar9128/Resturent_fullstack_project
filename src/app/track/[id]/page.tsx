@@ -1,0 +1,13 @@
+'use client';
+
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
+
+type Order={id:string;orderNumber:string;status:string;type:string;totalPaise:number;createdAt:string;items:{id:string;name:string;quantity:number;lineTotalPaise:number}[];events:{status:string;createdAt:string;note:string|null}[]};
+const money=(n:number)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(n/100);
+export default function TrackPage(){
+ const params=useParams<{id:string}>();const [order,setOrder]=useState<Order|null>(null);const [error,setError]=useState('');
+ useEffect(()=>{let alive=true;const load=async()=>{try{const r=await fetch('/api/orders/'+params.id);const b=await r.json();if(!r.ok)throw new Error(b?.error?.message||'Order not found');if(alive)setOrder(b.data);}catch(e){if(alive)setError((e as Error).message);}};void load();const stream=new EventSource('/api/orders/'+params.id+'/stream');stream.addEventListener('update',()=>void load());const timer=setInterval(()=>void load(),30000);return()=>{alive=false;stream.close();clearInterval(timer);};},[params.id]);
+ return <main className="min-h-screen bg-[#f1e9dc] py-10"><div className="container-page max-w-2xl"><Link href="/" className="text-sm font-bold text-spice">← Spice Garden</Link><div className="paper-card mt-6 p-8">{error&&<p role="alert" className="text-red-700">{error}</p>}{!order&&!error&&<p>Loading order…</p>}{order&&<><p className="eyebrow text-spice">Order tracking</p><h1 className="mt-2 font-display text-4xl">{order.orderNumber}</h1><p className="mt-2 text-sm text-[#786e61]">{order.type.replaceAll('_',' ')} · Placed {new Date(order.createdAt).toLocaleString('en-IN')}</p><div className="my-7 rounded-2xl bg-[#f1e9dc] p-5"><p className="text-xs font-bold uppercase tracking-widest text-[#8b7d6b]">Current status</p><p className="mt-2 font-display text-3xl text-spice">{order.status.replaceAll('_',' ')}</p></div><h2 className="font-display text-2xl">Order timeline</h2><div className="mt-4 space-y-4">{order.events.map((e,i)=><div key={i} className="flex gap-3"><span className="mt-1 h-3 w-3 rounded-full bg-leaf"/><div><b>{e.status.replaceAll('_',' ')}</b><p className="text-xs text-[#8b7d6b]">{new Date(e.createdAt).toLocaleString('en-IN')} {e.note?'· '+e.note:''}</p></div></div>)}</div><div className="mt-7 border-t border-[#e9e1d3] pt-5">{order.items.map(i=><div key={i.id} className="flex justify-between py-1 text-sm"><span>{i.quantity} × {i.name}</span><b>{money(i.lineTotalPaise)}</b></div>)}<div className="mt-4 flex justify-between text-lg"><b>Total</b><b className="text-spice">{money(order.totalPaise)}</b></div></div></>}</div></div></main>;
+}
