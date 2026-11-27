@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/shared/db/prisma';
 
 export const adminRepository = {
@@ -17,7 +18,7 @@ export const adminRepository = {
   createMenuItem(data: { categoryId: string; name: string; slug: string; description?: string; imageUrl?: string; diet: 'VEG'|'NON_VEG'|'EGG'; jainAvailable: boolean; spiceLevel: 'NONE'|'MILD'|'MEDIUM'|'SPICY'; allergens: ('GLUTEN'|'DAIRY'|'NUTS'|'PEANUTS'|'SOY'|'EGG'|'FISH'|'SHELLFISH'|'SESAME'|'MUSTARD')[]; basePricePaise: number; isBestseller: boolean }) {
     return prisma.menuItem.create({ data: { ...data, description: data.description || null, imageUrl: data.imageUrl || null } });
   },
-  updateMenuItem(id: string, data: Record<string, unknown>) {
+  updateMenuItem(id: string, data: Prisma.MenuItemUncheckedUpdateInput) {
     return prisma.menuItem.update({ where: { id }, data });
   },
   async setAvailability(itemId: string, branchId: string, isAvailable: boolean, stockQty?: number | null) {
