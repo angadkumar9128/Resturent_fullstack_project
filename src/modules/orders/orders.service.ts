@@ -82,8 +82,8 @@ export async function createOrder(input: CheckoutInput, user: SessionUser | null
 
     let tableId: string | undefined;
     if (input.type === 'DINE_IN') {
-      const table = await tx.diningTable.findUnique({
-        where: { branchId_code: { branchId, code: input.tableToken! } },
+      const table = await tx.diningTable.findFirst({
+        where: { branchId, qrToken: input.tableToken!, isActive: true, branch: { isActive: true } },
       });
       if (!table || !table.isActive) throw E.notFound('Table not found. Please scan the QR code again.');
       tableId = table.id;
