@@ -1,4 +1,5 @@
 import { revalidateTag } from 'next/cache';
+import type { Prisma } from '@prisma/client';
 import { E } from '@/shared/errors/app-error';
 import { prisma } from '@/shared/db/prisma';
 import { adminRepository as repo } from './admin.repository';
@@ -27,9 +28,9 @@ export async function createMenuItem(input: Parameters<typeof repo.createMenuIte
   return item;
 }
 
-export async function updateMenuItem(id: string, input: Record<string, unknown>, actorId: string) {
+export async function updateMenuItem(id: string, input: Prisma.MenuItemUncheckedUpdateInput, actorId: string) {
   const item = await repo.updateMenuItem(id, input);
-  await prisma.auditLog.create({ data: { actorId, action: 'menu.update', entityType: 'MenuItem', entityId: item.id, diff: input } });
+  await prisma.auditLog.create({ data: { actorId, action: 'menu.update', entityType: 'MenuItem', entityId: item.id, diff: input as Prisma.InputJsonValue } });
   revalidateTag('menu');
   return item;
 }
